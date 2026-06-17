@@ -100,6 +100,7 @@ h1{margin:0 0 2px;font-size:20px}
   <div>
     <h1>Centro Multimedia · Programa 2026</h1>
     <div class="sub">Gantt interactivo · saturación diaria (actividades simultáneas) · pasa el cursor sobre barras y franja de calor.</div>
+    <div id="status" style="font-size:12px;color:var(--mut);margin-top:2px">Cargando datos…</div>
   </div>
   <div class="authbox" id="authbox"></div>
 </header>
@@ -168,7 +169,7 @@ h1{margin:0 0 2px;font-size:20px}
 <script>
 // ===== Config Supabase (la llave publishable es segura de exponer) =====
 const SUPABASE_URL='https://nnpauvofslosmpwcwyee.supabase.co';
-const SUPABASE_KEY='sb_publishable_lC0ByWHTF6FzO16ov3eGvA_bK_pFYDA';
+const SUPABASE_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5ucGF1dm9mc2xvc21wd2N3eWVlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE3MTY0NjgsImV4cCI6MjA5NzI5MjQ2OH0.2XOh_8CwpN3uqIAC3zyRyvdQG9qGnc1k8IJmR3gSb4c';
 const OWNER_EMAIL='xkethus@gmail.com';
 const sb=window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
 
@@ -192,15 +193,24 @@ let countCont=false, showTent=true, isOwner=false;
 const chart=document.getElementById('chart');
 const tip=document.getElementById('tip');
 
+function setStatus(msg,err){const el=document.getElementById('status'); if(el){el.textContent=msg; el.style.color=err?'#ff8a7d':'var(--mut)';}}
 async function load(){
-  const [ra,rs]=await Promise.all([
-    sb.from('actividades').select('*').order('area',{ascending:true}).order('orden',{ascending:true}),
-    sb.from('sesiones').select('*').order('inicio',{ascending:true})
-  ]);
-  if(ra.error){chart.innerHTML='<div style="padding:20px;color:#ff8a7d">Error cargando datos: '+esc(ra.error.message)+'</div>';return;}
-  ACTS=ra.data||[];
-  SES={}; (rs.data||[]).forEach(s=>{(SES[s.actividad_id]=SES[s.actividad_id]||[]).push(s);});
-  render();
+  try{
+    const [ra,rs]=await Promise.all([
+      sb.from('actividades').select('*').order('area',{ascending:true}).order('orden',{ascending:true}),
+      sb.from('sesiones').select('*').order('inicio',{ascending:true})
+    ]);
+    if(ra.error) throw ra.error;
+    ACTS=ra.data||[];
+    SES={}; (rs.data||[]).forEach(s=>{(SES[s.actividad_id]=SES[s.actividad_id]||[]).push(s);});
+    const nses=(rs.data||[]).length;
+    setStatus(ACTS.length+' actividades · '+nses+' sesiones cargadas'+(rs.error?' (aviso sesiones: '+rs.error.message+')':''));
+    render();
+  }catch(e){
+    const m=(e&&e.message)?e.message:String(e);
+    setStatus('Error al cargar datos: '+m,true);
+    chart.innerHTML='<div style="padding:20px;color:#ff8a7d">No se pudieron cargar los datos: '+esc(m)+'</div>';
+  }
 }
 // sesiones de una actividad; si no tiene, usa su periodo inicio/fin como respaldo
 function sesOf(a){
