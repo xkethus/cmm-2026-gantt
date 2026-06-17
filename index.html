@@ -120,7 +120,7 @@ h1{margin:0 0 2px;font-size:20px}
   <span class="sw"><span class="box" style="background:#6ea8fe"></span>barra = duración</span>
   <span class="sw"><span class="box tent" style="background:#6ea8fe;background-image:repeating-linear-gradient(45deg,transparent,transparent 4px,rgba(0,0,0,.25) 4px,rgba(0,0,0,.25) 8px)"></span>tentativa</span>
   <span class="sw"><span class="box" style="background:#6ea8fe;opacity:.5;border:1px dashed #fff"></span>permanente</span>
-  <span class="sw" style="margin-left:10px">menos saturado <span class="scale"></span> más saturado</span>
+  <span class="sw" style="margin-left:10px">1 actividad <span class="scale"></span> 4 o más</span>
 </div>
 <div id="tip"></div>
 
@@ -230,9 +230,10 @@ function computeHeat(){   // cuenta ACTIVIDADES distintas activas por día (vía
   });
   return c;
 }
+const SATMAX=4;  // escala de color: 1=verde ... 4 o más=rojo
 function heatColor(v,mx){
   if(v<=0)return '#141722';
-  const t=v/mx, stops=[[29,59,47],[58,125,58],[207,209,74],[232,146,58],[214,69,58]];
+  const t=Math.min(1,v/mx), stops=[[29,59,47],[58,125,58],[207,209,74],[232,146,58],[214,69,58]];
   const p=t*(stops.length-1), i=Math.min(stops.length-2,Math.floor(p)), f=p-i;
   const c=stops[i].map((s,k)=>Math.round(s+(stops[i+1][k]-s)*f));
   return 'rgb('+c.join(',')+')';
@@ -248,15 +249,15 @@ function render(){
     const cell=document.createElement('div');cell.className='mcell';cell.style.left=(off*DAYW)+'px';
     cell.style.width=(DAYW*32)+'px';cell.textContent=MES[m];mt.appendChild(cell);}
   mh.appendChild(mt);chart.appendChild(mh);
-  const peakBands=[];{const thr=Math.max(3,Math.round(mx*0.8));let s=-1;
+  const peakBands=[];{const thr=SATMAX;let s=-1;
    for(let i=0;i<=DAYS;i++){const hi=i<DAYS&&heat[i]>=thr;
      if(hi&&s<0)s=i; else if(!hi&&s>=0){peakBands.push([s,i-1]);s=-1;}}}
   const hr=document.createElement('div');hr.className='heatrow';
   const hl=document.createElement('div');hl.className='lab';
-  hl.innerHTML='Saturación / día<small>máx '+mx+' simultáneas</small>';hr.appendChild(hl);
+  hl.innerHTML='Saturación / día<small>verde 1 · rojo 4+ · máx real '+mx+'</small>';hr.appendChild(hl);
   const ht=document.createElement('div');ht.className='track';ht.style.height='34px';
   for(let i=0;i<DAYS;i++){const cell=document.createElement('div');cell.className='heatcell';
-    cell.style.left=(i*DAYW)+'px';cell.style.width=(DAYW+0.5)+'px';cell.style.background=heatColor(heat[i],mx);
+    cell.style.left=(i*DAYW)+'px';cell.style.width=(DAYW+0.5)+'px';cell.style.background=heatColor(heat[i],SATMAX);
     cell.dataset.i=i; cell.addEventListener('mousemove',heatTip);cell.addEventListener('mouseleave',hideTip);ht.appendChild(cell);}
   peakBands.forEach(([a,b])=>{const pk=document.createElement('div');pk.className='peak';
     pk.style.left=(a*DAYW)+'px';pk.style.width=((b-a+1)*DAYW)+'px';
