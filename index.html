@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CMM 2026 · Gantt interactivo y saturación</title>
+<style>
+:root{
+  --bg:#0f1117; --panel:#171a23; --panel2:#1d2130; --line:#2a2f3e;
+  --txt:#e7eaf0; --mut:#9aa3b2; --accent:#6ea8fe;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--txt);font:14px/1.45 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
+header{padding:18px 24px 6px}
+h1{margin:0 0 2px;font-size:20px}
+.sub{color:var(--mut);font-size:13px;margin-bottom:10px}
+.controls{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;padding:6px 24px 14px}
+.chip{display:inline-flex;align-items:center;gap:6px;background:var(--panel2);border:1px solid var(--line);
+  border-radius:20px;padding:4px 11px;cursor:pointer;user-select:none;font-size:12.5px;color:var(--txt)}
+.chip input{accent-color:var(--accent);margin:0}
+.chip .dot{width:10px;height:10px;border-radius:50%}
+.chip.off{opacity:.38}
+.toggle{display:inline-flex;gap:6px;align-items:center;color:var(--mut);font-size:12.5px;cursor:pointer}
+.kpis{display:flex;gap:10px;flex-wrap:wrap;padding:0 24px 10px}
+.kpi{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px 14px;min-width:120px}
+.kpi b{display:block;font-size:21px;line-height:1.1}
+.kpi span{color:var(--mut);font-size:11.5px}
+.wrap{overflow-x:auto;overflow-y:hidden;border-top:1px solid var(--line);position:relative}
+.chart{position:relative}
+.row{position:relative;display:flex;align-items:stretch;border-bottom:1px solid var(--line)}
+.lab{position:sticky;left:0;z-index:6;background:var(--panel);border-right:1px solid var(--line);
+  width:240px;min-width:240px;padding:6px 10px;font-size:12px;display:flex;align-items:center;gap:7px}
+.lab .nm{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.track{position:relative;flex:1}
+.bar{position:absolute;top:5px;height:20px;border-radius:5px;cursor:pointer;overflow:hidden;
+  box-shadow:0 1px 2px rgba(0,0,0,.35);display:flex;align-items:center}
+.bar .t{font-size:10.5px;color:#0b0d12;padding:0 6px;white-space:nowrap;font-weight:600;opacity:.92}
+.bar.tent{background-image:repeating-linear-gradient(45deg,transparent,transparent 4px,rgba(0,0,0,.18) 4px,rgba(0,0,0,.18) 8px)}
+.bar.cont{opacity:.5;border:1px dashed rgba(255,255,255,.5)}
+.grp{position:sticky;left:0;z-index:7;background:var(--panel2);padding:5px 12px;font-weight:700;
+  font-size:12px;letter-spacing:.3px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px}
+.grp .dot{width:11px;height:11px;border-radius:3px}
+.months{position:sticky;top:0;z-index:8;display:flex;background:var(--panel);border-bottom:1px solid var(--line)}
+.months .lab{background:var(--panel);font-weight:700}
+.mcell{position:absolute;top:0;height:100%;border-left:1px solid var(--line);font-size:11px;color:var(--mut);
+  padding:5px 0 0 6px;text-transform:uppercase;letter-spacing:.5px}
+.heatrow{position:relative;display:flex;border-bottom:2px solid var(--line)}
+.heatrow .lab{background:var(--panel);font-weight:700;flex-direction:column;align-items:flex-start;gap:2px;justify-content:center}
+.heatrow .lab small{color:var(--mut);font-weight:400;font-size:10.5px}
+.heatcell{position:absolute;top:0;height:100%}
+.gridline{position:absolute;top:0;bottom:0;border-left:1px solid rgba(255,255,255,.045);pointer-events:none}
+#tip{position:fixed;z-index:50;pointer-events:none;background:#0b0d12;border:1px solid var(--line);
+  border-radius:8px;padding:9px 11px;max-width:330px;font-size:12px;box-shadow:0 8px 24px rgba(0,0,0,.5);display:none}
+#tip h4{margin:0 0 4px;font-size:12.5px}
+#tip .meta{color:var(--mut);font-size:11px;margin-top:3px}
+#tip .raw{color:var(--accent);font-size:11px;margin-top:5px;border-top:1px solid var(--line);padding-top:4px}
+.legend{display:flex;gap:14px;flex-wrap:wrap;padding:8px 24px 18px;color:var(--mut);font-size:11.5px;align-items:center}
+.legend .sw{display:inline-flex;align-items:center;gap:5px}
+.legend .box{width:22px;height:12px;border-radius:3px;display:inline-block}
+.scale{display:inline-flex;height:12px;width:160px;border-radius:3px;
+  background:linear-gradient(90deg,#1d3b2f,#3a7d3a,#cfd14a,#e8923a,#d6453a)}
+.peak{position:absolute;top:0;bottom:0;background:rgba(214,69,58,.10);border-left:1px dashed rgba(214,69,58,.5);
+  border-right:1px dashed rgba(214,69,58,.5);pointer-events:none;z-index:1}
+.peak span{position:absolute;top:2px;left:4px;font-size:9.5px;color:#ff8a7d;font-weight:700;white-space:nowrap}
+</style>
+</head>
+<body>
+<header>
+  <h1>Centro Multimedia · Programa 2026</h1>
+  <div class="sub">Gantt interactivo de 57 actividades · saturación diaria (actividades simultáneas) · pasa el cursor sobre barras y franja de calor</div>
+</header>
+<div class="kpis" id="kpis"></div>
+<div class="controls" id="areaFilters"></div>
+<div class="controls" style="padding-top:0">
+  <label class="toggle"><input type="checkbox" id="tCont"> Contar actividades permanentes ("Todo el año") en la saturación</label>
+  <label class="toggle"><input type="checkbox" id="tTent" checked> Mostrar actividades tentativas (solo mes confirmado)</label>
+</div>
+<div class="wrap" id="wrap"><div class="chart" id="chart"></div></div>
+<div class="legend">
+  <span class="sw"><span class="box" style="background:#6ea8fe"></span>barra = duración</span>
+  <span class="sw"><span class="box tent" style="background:#6ea8fe;background-image:repeating-linear-gradient(45deg,transparent,transparent 4px,rgba(0,0,0,.25) 4px,rgba(0,0,0,.25) 8px)"></span>tentativa (mes aprox.)</span>
+  <span class="sw"><span class="box" style="background:#6ea8fe;opacity:.5;border:1px dashed #fff"></span>permanente</span>
+  <span class="sw" style="margin-left:10px">menos saturado <span class="scale"></span> más saturado</span>
+</div>
+<div id="tip"></div>
+<script>
+const DATA={"acts": [{"area": "Producción/Diseño", "area_code": "PD", "titulo": "Taller > Introducción al diseño editorial", "fecha_raw": "Febrero / del 16 al  27 de 16 a 19 h, lunes miércoles y viernes", "imparte": "Amanda Lemus Cano", "lugar": "En Línea", "modalidad": "En línea", "inicio": "2026-02-01", "fin": "2026-02-28", "flags": ["tentativa"]}, {"area": "Producción/Diseño", "area_code": "PD", "titulo": "Taller > Impresión con tipos móviles y encuadernación", "fecha_raw": "Junio / Sábado: 13, 20 y 27 , de 10 a 14 h", "imparte": "Zazilha Lotz Cruz García ( Diseñadora)", "lugar": "Área Común (picnic) del Centro Multimedia", "modalidad": "Presencial", "inicio": "2026-06-01", "fin": "2026-06-30", "flags": ["tentativa"]}, {"area": "Producción/Diseño", "area_code": "PD", "titulo": "Taller > Conceptualización de proyectos editoriales", "fecha_raw": "Junio / Del 15 al 19 de junio, de 16 a 20 h cambio de fecha al 25 al 29 de mayo", "imparte": "José Luis Lugo (Diseñador de libros)", "lugar": "Sala MAC del Centro Multimedia", "modalidad": "Presencial", "inicio": "2026-05-25", "fin": "2026-06-19", "flags": []}, {"area": "Producción/Diseño", "area_code": "PD", "titulo": "Seminario > DiseñaLab. Teoría, reflexión y praxis. Edición Puebla", "fecha_raw": "Julio  / Lunes y miércoles, 1,6, 8, 13, 15, 20, 22, 27 y 29, de 16 a 19 h", "imparte": "Coordina Jesus  Barrientos (Diseñador - Puebla)", "lugar": "En línea", "modalidad": "En línea", "inicio": "2026-07-01", "fin": "2026-07-31", "flags": ["tentativa"]}, {"area": "Producción/Diseño", "area_code": "PD", "titulo": "Taller > Escrituras digitales  / Ciberliteratura  (Título tentativo)", "fecha_raw": "Abril  /  22, 24, 29 y Mayo / 6", "imparte": "Nohelia Meza (Investigadora)", "lugar": "Área de picnic del Centro Multimedia", "modalidad": "En línea", "inicio": "2026-04-22", "fin": "2026-04-29", "flags": []}, {"area": "Producción/Diseño", "area_code": "PD", "titulo": "Conferencia en línea para la fábrica > Nuevas formas de narrar", "fecha_raw": "Septiembre / por confirmar", "imparte": "Nohelia Meza (Investigadora)", "lugar": "En línea", "modalidad": "En línea", "inicio": "2026-09-01", "fin": "2026-09-30", "flags": ["tentativa"]}, {"area": "Producción/Diseño", "area_code": "PD", "titulo": "Nodo-E Lab", "fecha_raw": "-Abril 1: Formato /  Mayo 6:  Retícula / Junio 3: Márgenes /  Julio 2: Columnas / Agosto5: Interlínea / Septiembre 2: Jerarquía / Octubre 8: Tipografía / Noviembre 4: Ritmo y Balance | 16 a 18 h.", "imparte": "Amanda Lemus Cano", "lugar": "Presencial", "modalidad": "Presencial", "inicio": "2026-04-01", "fin": "2026-11-04", "flags": []}, {"area": "Producción/Diseño", "area_code": "PD", "titulo": "Convocatoria > Fábrica de producción editorial. Proyectos en formación 2026", "fecha_raw": "Convocatoria abierta del  3 de marzo al 22 de mayo / Publicación de resultados 12 de junio  /  Presentación inicial -  26 de junio  / Estación 1 -  10 de julio / Estación 2 - 24 de julio / Estación 3 - 7 de agosto / Revisión intermedia -  21 de agosto / Revisión intermedia 2  - 4 de septiembre / Estación 4 - 18 de septiembre / Estación 5- 2 de octubre / Presentación final - 16 de octubre, de 16 a 20 h", "imparte": "Coordina, \nJacobo Zandella", "lugar": "Presentación inicial en Galería Manuel Felguérez; estaciones de trabajo en línea; presentación intermedia en Galería Manuel Felguérez; presentación final en el Aula Magna José Vasconcelos", "modalidad": "Híbrido", "inicio": "2026-03-03", "fin": "2026-10-16", "flags": []}, {"area": "Producción/Diseño", "area_code": "PD", "titulo": "Picnic editorial > Escrituras Inmateriales", "fecha_raw": "Sábado14 marzo, de 11 a 14 h / Mitzi Juárez", "imparte": "Edición en NgibaNgigua - Mitzi Juárez,  TypasType, Manuel López Rocha y David Kimura", "lugar": "Áreas verdes", "modalidad": "Presencial", "inicio": "2026-03-14", "fin": "2026-03-14", "flags": []}, {"area": "Producción/Diseño", "area_code": "PD", "titulo": "Ciclo de charlas > El diseño de los objetos", "fecha_raw": "Febrero / Sábado 7, 14, 21 y 28, de 11 a 14 h", "imparte": "Textil - Edith Medina / 7 de febrero\nMobiliario-  Germán Rostán/ 14 de febrero\nMuseo - Paola Gallardo / 21 de Febrero\nJoyería /Lilia Corona 28 de ferbrero", "lugar": "Área Común (picnic) del Centro Multimedia", "modalidad": "Presencial", "inicio": "2026-02-07", "fin": "2026-02-28", "flags": []}, {"area": "Producción/Diseño", "area_code": "PD", "titulo": "Taller >  libros bordados con electrónica", "fecha_raw": "Noviembre / Del lunes 9 al viernes 13, de 16 a 19 h", "imparte": "Curaduría: Luis Ángel Jiménez", "lugar": "Área Común (picnic) del Centro Multimedia", "modalidad": "Presencial", "inicio": "2026-11-01", "fin": "2026-11-30", "flags": ["tentativa"]}, {"area": "Producción/Diseño", "area_code": "PD", "titulo": "Proyecto editorial > Fanzine. Ápice, los vértices del diseño", "fecha_raw": "Julio: 1º número: Diseño y Audio ; Agosto:  2º numero: Diseño y Realidad virtual; Septiembre: 3ª número: Diseño e Imagénes en movimiento; Octubre:  4º número: Diseño e Investigación", "imparte": "Amanda Lemus Cano", "lugar": "En línea", "modalidad": "En línea", "inicio": "2026-07-01", "fin": "2026-10-31", "flags": ["tentativa"]}, {"area": "Gráfica Digital", "area_code": "GD", "titulo": "Taller > Impresión fine art", "fecha_raw": "del 3 al 14 de agosto", "imparte": "Emiliano Aivar", "lugar": "picnic", "modalidad": "presencial", "inicio": "2026-08-03", "fin": "2026-08-14", "flags": []}, {"area": "Gráfica Digital", "area_code": "GD", "titulo": "Taller>Impresión en Plotter", "fecha_raw": "del 7 al 11 de diciembre", "imparte": "por definir", "lugar": "Taller Gráfica Digital / Picnic", "modalidad": "presencial", "inicio": "2026-12-07", "fin": "2026-12-11", "flags": []}, {"area": "Gráfica Digital", "area_code": "GD", "titulo": "Conversatorio Online > Quién le teme a la IA feroz? 3ra temporada Capítulo 1 , Guiones interpretados por IA", "fecha_raw": "producción: 9 de febrero,6 de mayo y 7 de septiembre.Emisión dependerá de TIM.", "imparte": "Humberto Jardón/Enrique Hernández/ Eduardo Ramos", "lugar": "Canal de youtube", "modalidad": "en linea", "inicio": "2026-02-09", "fin": "2026-09-07", "flags": []}, {"area": "Audio", "area_code": "AU", "titulo": "Taller > Introducción a la síntesis sonora con VCV Rack", "fecha_raw": "Taller > 7,9,14,16,21,23 de abril\nPresentación > 7,8 de mayo", "imparte": "Rogelio Serrano", "lugar": "Taller : Sala Mac / Presentación : GMF", "modalidad": "Presencial", "inicio": "2026-04-07", "fin": "2026-05-08", "flags": []}, {"area": "Audio", "area_code": "AU", "titulo": "Taller > El No-Taller", "fecha_raw": "Taller >7,14, 21, 28 de septiembre\nPresentación > 1 de octubre", "imparte": "Aliona Pankina", "lugar": "Black Box", "modalidad": "Presencial", "inicio": "2026-09-07", "fin": "2026-10-01", "flags": []}, {"area": "Audio", "area_code": "AU", "titulo": "Taller > Voces híbrides", "fecha_raw": "Taller > 11 - 15 de mayo", "imparte": "Marianne Teixido", "lugar": "Sala Mac", "modalidad": "Presencial", "inicio": "2026-05-11", "fin": "2026-05-15", "flags": []}, {"area": "Audio", "area_code": "AU", "titulo": "Taller > Reentrenamiento de modelos de lenguaje para creación musical en notación ABC", "fecha_raw": "Taller > 4 al 7 de agosto\nPresentación de resultados > 7 de agosto", "imparte": "Aaron Escoba Castañeda", "lugar": "Taller : Sala Mac / Presentación : Salon 222", "modalidad": "Presencial", "inicio": "2026-08-04", "fin": "2026-08-07", "flags": []}, {"area": "Audio", "area_code": "AU", "titulo": "Capsula WEB > Estructuras de consumo en la vorágine sonora", "fecha_raw": "Presentación y publicación de capsulas > 28 de agosto", "imparte": "Carlos Maldonado", "lugar": "WEB, Galeria MF", "modalidad": "En Linea", "inicio": "2026-08-28", "fin": "2026-08-28", "flags": []}, {"area": "Audio", "area_code": "AU", "titulo": "Taller > Audio Digital", "fecha_raw": "10, 12, 17 y 19 de febrero", "imparte": "Gonzalo T.", "lugar": "Sala Mac", "modalidad": "Híbrido", "inicio": "2026-02-10", "fin": "2026-02-19", "flags": []}, {"area": "Audio", "area_code": "AU", "titulo": "Taller > SuperCollider", "fecha_raw": "13 -17 de julio", "imparte": "Gonzalo T.", "lugar": "Sala Mac", "modalidad": "Híbrido", "inicio": "2026-07-13", "fin": "2026-07-17", "flags": []}, {"area": "Audio", "area_code": "AU", "titulo": "Ciclo de conciertos > Mecánicas Inmersivas 3", "fecha_raw": "21 - 25 de octubre", "imparte": "Gonzalo T / Carole Chargueron / Edmar Soria.", "lugar": "ESM, BlackBox, Sonidario", "modalidad": "Híbdrido", "inicio": "2026-10-21", "fin": "2026-10-25", "flags": []}, {"area": "Ingeniería", "area_code": "Ingeniería", "titulo": "Ingeniería: Cursos", "fecha_raw": "agosto 10 al 14 2026", "imparte": "Hector Gutierrez", "lugar": "En Linea", "modalidad": "En Linea", "inicio": "2026-08-10", "fin": "2026-08-14", "flags": []}, {"area": "Ingeniería", "area_code": "Ingeniería", "titulo": "Conferencia / Showroom", "fecha_raw": "Septiembre 28 al 2 de octubre 2026 Fecha tentativa", "imparte": "Anahi Cabrera, Gabriela Reyes y Jorge Re", "lugar": "Galeria Felguerez", "modalidad": "Presencial", "inicio": "2026-09-02", "fin": "2026-10-28", "flags": ["tentativa"]}, {"area": "IER (Electrónica)", "area_code": "IER", "titulo": "Tecnologías para la escena", "fecha_raw": "12 al 23 Enero de 2026", "imparte": "Juan Galindo Muñiz", "lugar": "Sala de capacitación PC", "modalidad": "Presencial", "inicio": "2026-01-12", "fin": "2026-01-23", "flags": []}, {"area": "IER (Electrónica)", "area_code": "IER", "titulo": "Electrónica silente: Electrónica para personas sordas", "fecha_raw": "6 al 10 de Septiembre", "imparte": "Juan Galindo Muñiz e interprete de lenguaje de señas mexicana", "lugar": "Sala de capacitación PC", "modalidad": "Presencial", "inicio": "2026-09-06", "fin": "2026-09-10", "flags": []}, {"area": "IER (Electrónica)", "area_code": "IER", "titulo": "Electrones de inspiración: Teoría y Práctica desde el Arte y la Tecnología", "fecha_raw": "1 al 30 de julio", "imparte": "Juan Galindo Muñiz", "lugar": "LIER", "modalidad": "Online", "inicio": "2026-07-01", "fin": "2026-07-30", "flags": []}, {"area": "IER (Electrónica)", "area_code": "IER", "titulo": "Autopistas electrónicas: Curso de Diseño Electrónico en EasyEDA", "fecha_raw": "1 al 30 de julio", "imparte": "Juan Galindo Muñiz", "lugar": "LIER", "modalidad": "Online", "inicio": "2026-07-01", "fin": "2026-07-30", "flags": []}, {"area": "IER (Electrónica)", "area_code": "IER", "titulo": "Investigación: DRONES", "fecha_raw": "3 al 30 noviembre", "imparte": "Juan Galindo Muñiz", "lugar": "LIER", "modalidad": "Presencial", "inicio": "2026-11-03", "fin": "2026-11-30", "flags": []}, {"area": "IER (Electrónica)", "area_code": "IER", "titulo": "Asesorias abiertas", "fecha_raw": "Todo el año", "imparte": "Juan Galindo Muñiz", "lugar": "LIER", "modalidad": "Presencial y Online", "inicio": "2026-01-01", "fin": "2026-12-31", "flags": ["continua"]}, {"area": "IER (Electrónica)", "area_code": "IER", "titulo": "Asesorías PAPIAM", "fecha_raw": "Todo el año", "imparte": "Juan Galindo Muñiz", "lugar": "LIER", "modalidad": "Presncial y Online", "inicio": "2026-01-01", "fin": "2026-12-31", "flags": ["continua"]}, {"area": "IER (Electrónica)", "area_code": "IER", "titulo": "Coordinación de jóvenes construyendo el futuro", "fecha_raw": "Hasta Julio", "imparte": "Juan Galindo Muñiz", "lugar": "LIER", "modalidad": "Presencial", "inicio": "2026-01-01", "fin": "2026-07-31", "flags": ["continua"]}, {"area": "IER (Electrónica)", "area_code": "IER", "titulo": "Investigación sobre sistemas electrónicos, mecanicos y generación de código", "fecha_raw": "Todo el año", "imparte": "Juan Galindo Muñiz", "lugar": "LIER", "modalidad": "Presencial", "inicio": "2026-01-01", "fin": "2026-12-31", "flags": ["continua"]}, {"area": "TIM (Animación)", "area_code": "TIM", "titulo": "Taller >  Arqueología medial", "fecha_raw": "4 al 8 de mayo", "imparte": "Mariana Martinez", "lugar": "Sala Mac o Picnic", "modalidad": "Presencial", "inicio": "2026-05-04", "fin": "2026-05-08", "flags": []}, {"area": "TIM (Animación)", "area_code": "TIM", "titulo": "Taller >  Animación expandida", "fecha_raw": "Los viernes del 9 al 23 de octubre y 6 al 20 de noviembre", "imparte": "Eduardo Ramos", "lugar": "Sala Mac o Picnic", "modalidad": "Hibrido", "inicio": "2026-10-09", "fin": "2026-11-20", "flags": []}, {"area": "TIM (Animación)", "area_code": "TIM", "titulo": "Taller >  Cruces entre la animación y las artes visuales", "fecha_raw": "21 al 25 de septiembre", "imparte": "Eduardo Ramos", "lugar": "Sala Mac o Picnic", "modalidad": "Hibrido", "inicio": "2026-09-21", "fin": "2026-09-25", "flags": []}, {"area": "TIM (Animación)", "area_code": "TIM", "titulo": "Programa de Charlas> Pedagogías alternativas y cine comunitario", "fecha_raw": "8 y 22 de octubre", "imparte": "Betzabe García", "lugar": "Galería Manuel Felguérez o Picnic", "modalidad": "Hibrido", "inicio": "2026-10-08", "fin": "2026-10-22", "flags": []}, {"area": "TIM (Animación)", "area_code": "TIM", "titulo": "Programa> estudios sobre animación y practicas interdisciplinarias (2 Talleres  Cortos, 1 taller largo, 7 Charlas y 1 Performance) *Pendon", "fecha_raw": "16 de abril al 6 de junio y del 6 de agosto al 30 de septiembre", "imparte": "Maria Huerta/ Curadora", "lugar": "Galería Manuel Felguérez o Picnic, Sala Pc o Mac", "modalidad": "Hibrido", "inicio": "2026-04-16", "fin": "2026-09-30", "flags": []}, {"area": "TIM (Animación)", "area_code": "TIM", "titulo": "Archivo Dominique Jonard: cine colaborativo y memoria audiovisual *Pendon", "fecha_raw": "7 de febrero al 7 de marzo. Platica 21 de febrero.", "imparte": "Noyule Dominique Jonard", "lugar": "Foro negro y Galería Manuel Felguérez", "modalidad": "Presencial", "inicio": "2026-02-07", "fin": "2026-03-07", "flags": []}, {"area": "TIM (Animación)", "area_code": "TIM", "titulo": "Performance >¿Quién soy yo que lloro todas las lágrimas de mi cuerpo?", "fecha_raw": "19 de febrero", "imparte": "Paulina López", "lugar": "Galería Manuel Felguérez", "modalidad": "Presencial", "inicio": "2026-02-19", "fin": "2026-02-19", "flags": []}, {"area": "Investigación", "area_code": "Inv", "titulo": "Investigación: Cursos y talleres", "fecha_raw": "Jueves de 10:00 a 12:00\n\nFebrero 12 y 26\nMarzo 12 y 26\nAbril 9 y 23\nMayo 7 y 21\nJunio 4 y 18", "imparte": "Mariana Martínez Bonilla y María E. León M.", "lugar": "", "modalidad": "Presencial", "inicio": "2026-02-01", "fin": "2026-06-21", "flags": []}, {"area": "Investigación", "area_code": "Inv", "titulo": "Investigación: Convocatorias", "fecha_raw": "01 de Julio - septiembre", "imparte": "Mariana Martínez Bonilla y María E. León M.", "lugar": "", "modalidad": "", "inicio": "2026-07-01", "fin": "2026-07-01", "flags": []}, {"area": "Investigación", "area_code": "Inv", "titulo": "Investigación: Conferencias", "fecha_raw": "Febrero 11 y 25, marzo 11 y 25, abril 15 y 29, junio 24, julio 15 y 29, agosto 12 y 26, septiembre 09 y 23, octubre 07 y 21, y noviembre 11 y 25.", "imparte": "Marat Ocampo y María E. León", "lugar": "", "modalidad": "Presencial", "inicio": "2026-02-11", "fin": "2026-11-25", "flags": []}, {"area": "Investigación", "area_code": "Inv", "titulo": "Investigación: Otras actividades", "fecha_raw": "2025-09-07 00:00:00", "imparte": "Marat Ocampo.", "lugar": "", "modalidad": "", "inicio": "2026-09-07", "fin": "2026-09-07", "flags": []}, {"area": "Realidad Virtual", "area_code": "RV", "titulo": "Taller >Introduccion al modelado 3D", "fecha_raw": "23 al 27 de febrero", "imparte": "Hasem Anzurez Baeza", "lugar": "Sala PC", "modalidad": "Presencial", "inicio": "2026-02-23", "fin": "2026-02-27", "flags": []}, {"area": "Realidad Virtual", "area_code": "RV", "titulo": "Taller >Introducción a Touchdesigner", "fecha_raw": "8 al 12 de junio", "imparte": "Hasem Anzurez Baeza", "lugar": "Sala PC", "modalidad": "Presencial", "inicio": "2026-06-08", "fin": "2026-06-12", "flags": []}, {"area": "Realidad Virtual", "area_code": "RV", "titulo": "Taller >Principios de Animación 2D para Videojuegos", "fecha_raw": "5 al 9 de octubre", "imparte": "Manuel Bernado Ramos Ortiz", "lugar": "Sala PC", "modalidad": "Presencial", "inicio": "2026-10-05", "fin": "2026-10-09", "flags": []}, {"area": "Realidad Virtual", "area_code": "RV", "titulo": "Taller >Introducción a la programación de videojuegos en Godot", "fecha_raw": "Junio del 22 al 26", "imparte": "Guillermo Sánchez Basoco", "lugar": "Sala PC", "modalidad": "Presencial", "inicio": "2026-06-22", "fin": "2026-06-26", "flags": []}, {"area": "Realidad Virtual", "area_code": "RV", "titulo": "Taller >Introducción al desarrollo de experiencias de Realidad Virtual", "fecha_raw": "18 al 22 de mayo", "imparte": "Luis Romero Ramos", "lugar": "Sala PC", "modalidad": "Presencial", "inicio": "2026-05-18", "fin": "2026-05-22", "flags": []}, {"area": "Realidad Virtual", "area_code": "RV", "titulo": "Taller >Introducción a la impresión 3D", "fecha_raw": "21 al 25 de septiembre", "imparte": "Luis Romero Ramos", "lugar": "Sala PC", "modalidad": "Presencial", "inicio": "2026-09-21", "fin": "2026-09-25", "flags": []}, {"area": "Realidad Virtual", "area_code": "RV", "titulo": "Taller >Introducción al Diseño de Videojuegos Críticos y Experimentales", "fecha_raw": "16 al 29 de noviembre", "imparte": "Guillermo Sánchez Basoco", "lugar": "Sala PC", "modalidad": "Presencial", "inicio": "2026-11-16", "fin": "2026-11-29", "flags": []}, {"area": "Realidad Virtual", "area_code": "RV", "titulo": "LEIVA", "fecha_raw": "Julio-Septiembre", "imparte": "LabRVV", "lugar": "Área Común del Centro Multimedia y Sala PC", "modalidad": "Presencial", "inicio": "2026-07-01", "fin": "2026-09-30", "flags": ["tentativa"]}, {"area": "Realidad Virtual", "area_code": "RV", "titulo": "Charla: Los videojuegos en la ciencia: Aplicaciones en la investigación", "fecha_raw": "2026-03-26 00:00:00", "imparte": "Katya Alvarez Molina y Luis Romero Ramos", "lugar": "Área Común del Centro Multimedia de 17 a 19 h", "modalidad": "Presencial", "inicio": "2026-03-26", "fin": "2026-03-26", "flags": []}, {"area": "Realidad Virtual", "area_code": "RV", "titulo": "Global Game Jam", "fecha_raw": "Del 30 de enero al 1 de febrero", "imparte": "LabRVV", "lugar": "Área Común del Centro Multimedia", "modalidad": "Presencial", "inicio": "2026-01-30", "fin": "2026-02-01", "flags": []}, {"area": "Realidad Virtual", "area_code": "RV", "titulo": "Reconstrucción y mantenimiento de impresoras 3D", "fecha_raw": "Del 21 al 25 de Septiembre", "imparte": "LabRVV", "lugar": "LabRVV", "modalidad": "", "inicio": "2026-09-21", "fin": "2026-09-25", "flags": []}, {"area": "Realidad Virtual", "area_code": "RV", "titulo": "Mantenimiento de cascos RV", "fecha_raw": "19 al 23 de octubre", "imparte": "LabRVV", "lugar": "LabRVV", "modalidad": "", "inicio": "2026-10-19", "fin": "2026-10-23", "flags": []}], "undated": [{"area": "Producción/Diseño", "area_code": "PD", "titulo": "Asesoría en la Fábrica de producción editorial > Nuevas formas de narrar", "fecha_raw": "", "imparte": "Nohelia Meza (Investigadora)", "lugar": "En línea", "modalidad": "En línea", "inicio": null, "fin": null, "flags": ["sin_fecha"]}]};
+const Y=2026, DAYW=3.4, LAB=240;
+const MES=['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+const AREACOLORS={'Producción/Diseño':'#6ea8fe','Gráfica Digital':'#5fd0c5','Audio':'#f4a259',
+ 'Ingeniería':'#b388eb','IER (Electrónica)':'#e85d75','TIM (Animación)':'#7bc96f',
+ 'Investigación':'#e8c84a','Realidad Virtual':'#4ea8de'};
+const D0=new Date(Date.UTC(Y,0,1));
+const DAYS=( (new Date(Date.UTC(Y,11,31))-D0)/86400000 )+1;
+const WIDTH=DAYS*DAYW;
+function di(iso){return Math.round((new Date(iso+'T00:00:00Z')-D0)/86400000);}
+function dlabel(iso){const[y,m,d]=iso.split('-');return d+' '+MES[+m-1];}
+
+let areaOn={}; Object.keys(AREACOLORS).forEach(a=>areaOn[a]=true);
+let countCont=false, showTent=true;
+
+const chart=document.getElementById('chart');
+const tip=document.getElementById('tip');
+
+function visibleActs(){
+  return DATA.acts.filter(a=>areaOn[a.area] && (showTent|| !(a.flags||[]).includes('tentativa')));
+}
+function heatActs(){ // for saturation: discrete unless countCont
+  return visibleActs().filter(a=> countCont || !(a.flags||[]).includes('continua'));
+}
+function computeHeat(){
+  const c=new Array(DAYS).fill(0);
+  heatActs().forEach(a=>{for(let i=di(a.inicio);i<=di(a.fin);i++) if(i>=0&&i<DAYS)c[i]++;});
+  return c;
+}
+function heatColor(v,mx){
+  if(v<=0)return '#141722';
+  const t=v/mx;
+  const stops=[[29,59,47],[58,125,58],[207,209,74],[232,146,58],[214,69,58]];
+  const p=t*(stops.length-1); const i=Math.min(stops.length-2,Math.floor(p)); const f=p-i;
+  const c=stops[i].map((s,k)=>Math.round(s+(stops[i+1][k]-s)*f));
+  return 'rgb('+c.join(',')+')';
+}
+
+function render(){
+  chart.innerHTML='';
+  chart.style.width=(WIDTH+LAB)+'px';
+  const heat=computeHeat();
+  const mx=Math.max(1,...heat);
+
+  // months header
+  const mh=document.createElement('div');mh.className='months';
+  const ml=document.createElement('div');ml.className='lab';ml.textContent='Mes';mh.appendChild(ml);
+  const mt=document.createElement('div');mt.className='track';mt.style.height='26px';mt.style.position='relative';
+  for(let m=0;m<12;m++){const off=di(Y+'-'+String(m+1).padStart(2,'0')+'-01');
+    const cell=document.createElement('div');cell.className='mcell';cell.style.left=(off*DAYW)+'px';
+    cell.style.width=(DAYW*32)+'px';cell.textContent=MES[m];mt.appendChild(cell);}
+  mh.appendChild(mt);chart.appendChild(mh);
+
+  // peak markers (computed on current heat) - top contiguous high zones
+  const peakBands=[];
+  {const thr=Math.max(3,Math.round(mx*0.8));let s=-1;
+   for(let i=0;i<=DAYS;i++){const hi=i<DAYS&&heat[i]>=thr;
+     if(hi&&s<0)s=i; else if(!hi&&s>=0){peakBands.push([s,i-1]);s=-1;}}}
+
+  // heat row
+  const hr=document.createElement('div');hr.className='heatrow';
+  const hl=document.createElement('div');hl.className='lab';
+  hl.innerHTML='Saturación / día<small>máx '+mx+' simultáneas</small>';hr.appendChild(hl);
+  const ht=document.createElement('div');ht.className='track';ht.style.height='34px';
+  for(let i=0;i<DAYS;i++){const cell=document.createElement('div');cell.className='heatcell';
+    cell.style.left=(i*DAYW)+'px';cell.style.width=(DAYW+0.5)+'px';
+    cell.style.background=heatColor(heat[i],mx);
+    cell.dataset.i=i; cell.addEventListener('mousemove',heatTip);cell.addEventListener('mouseleave',hideTip);
+    ht.appendChild(cell);}
+  peakBands.forEach(([a,b])=>{const pk=document.createElement('div');pk.className='peak';
+    pk.style.left=(a*DAYW)+'px';pk.style.width=((b-a+1)*DAYW)+'px';
+    const sp=document.createElement('span');sp.textContent='▲ pico';pk.appendChild(sp);ht.appendChild(pk);});
+  hr.appendChild(ht);chart.appendChild(hr);
+
+  // group by area
+  const areas=Object.keys(AREACOLORS).filter(a=>areaOn[a]);
+  areas.forEach(area=>{
+    let list=visibleActs().filter(a=>a.area===area).sort((x,y)=>x.inicio<y.inicio?-1:1);
+    if(!list.length)return;
+    const g=document.createElement('div');g.className='grp';
+    g.innerHTML='<span class="dot" style="background:'+AREACOLORS[area]+'"></span>'+area+' · '+list.length;
+    chart.appendChild(g);
+    list.forEach(a=>{
+      const row=document.createElement('div');row.className='row';
+      const lab=document.createElement('div');lab.className='lab';
+      lab.innerHTML='<span class="dot" style="width:8px;height:8px;border-radius:50%;background:'+AREACOLORS[area]+'"></span><span class="nm">'+esc(a.titulo)+'</span>';
+      row.appendChild(lab);
+      const tr=document.createElement('div');tr.className='track';tr.style.height='30px';
+      for(let m=1;m<12;m++){const gl=document.createElement('div');gl.className='gridline';
+        gl.style.left=(di(Y+'-'+String(m+1).padStart(2,'0')+'-01')*DAYW)+'px';tr.appendChild(gl);}
+      const s=di(a.inicio),e=di(a.fin);
+      const bar=document.createElement('div');
+      bar.className='bar'+((a.flags||[]).includes('tentativa')?' tent':'')+((a.flags||[]).includes('continua')?' cont':'');
+      bar.style.left=(s*DAYW)+'px';bar.style.width=Math.max(7,(e-s+1)*DAYW)+'px';
+      bar.style.background=AREACOLORS[area];
+      bar.innerHTML='<span class="t">'+esc(a.titulo.replace(/^.*?>\s*/,''))+'</span>';
+      bar._a=a;bar.addEventListener('mousemove',barTip);bar.addEventListener('mouseleave',hideTip);
+      tr.appendChild(bar);row.appendChild(tr);chart.appendChild(row);
+    });
+  });
+  renderKpis(heat,mx);
+}
+function esc(s){return (s||'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}
+
+function barTip(e){const a=e.currentTarget._a;
+  let h='<h4>'+esc(a.titulo)+'</h4>';
+  h+='<div class="meta">'+a.area+'</div>';
+  if(a.imparte)h+='<div class="meta">Imparte: '+esc(a.imparte)+'</div>';
+  if(a.lugar)h+='<div class="meta">Lugar: '+esc(a.lugar)+'</div>';
+  if(a.modalidad)h+='<div class="meta">Modalidad: '+esc(a.modalidad)+'</div>';
+  h+='<div class="meta">'+dlabel(a.inicio)+' → '+dlabel(a.fin)+'</div>';
+  if((a.flags||[]).includes('tentativa'))h+='<div class="meta" style="color:#f4a259">⚠ fecha tentativa (solo mes confirmado)</div>';
+  if((a.flags||[]).includes('continua'))h+='<div class="meta" style="color:#8fd">actividad permanente</div>';
+  if(a.fecha_raw)h+='<div class="raw">"'+esc(a.fecha_raw)+'"</div>';
+  showTip(e,h);}
+function heatTip(e){const i=+e.currentTarget.dataset.i;
+  const day=new Date(D0.getTime()+i*86400000);const iso=day.toISOString().slice(0,10);
+  const list=heatActs().filter(a=>di(a.inicio)<=i&&i<=di(a.fin));
+  let h='<h4>'+dlabel(iso)+' · '+list.length+' simultáneas</h4>';
+  h+='<div class="meta">'+list.slice(0,12).map(a=>'• '+esc(a.titulo)).join('<br>')+(list.length>12?'<br>…':'')+'</div>';
+  showTip(e,h);}
+function showTip(e,h){tip.innerHTML=h;tip.style.display='block';
+  let x=e.clientX+14,y=e.clientY+14;
+  if(x+340>innerWidth)x=e.clientX-326;if(y+200>innerHeight)y=e.clientY-180;
+  tip.style.left=x+'px';tip.style.top=y+'px';}
+function hideTip(){tip.style.display='none';}
+
+function renderKpis(heat,mx){
+  const acts=visibleActs();
+  const peakDay=heat.indexOf(mx);
+  const iso=new Date(D0.getTime()+peakDay*86400000).toISOString().slice(0,10);
+  const k=document.getElementById('kpis');
+  k.innerHTML=
+   kpi(acts.length,'actividades visibles')+
+   kpi(mx,'pico de simultaneidad')+
+   kpi(dlabel(iso),'día más saturado')+
+   kpi(acts.filter(a=>(a.flags||[]).includes('tentativa')).length,'con fecha tentativa');
+}
+function kpi(b,s){return '<div class="kpi"><b>'+b+'</b><span>'+s+'</span></div>';}
+
+// area filter chips
+const af=document.getElementById('areaFilters');
+Object.keys(AREACOLORS).forEach(a=>{
+  if(!DATA.acts.some(x=>x.area===a))return;
+  const c=document.createElement('label');c.className='chip';
+  c.innerHTML='<span class="dot" style="background:'+AREACOLORS[a]+'"></span>'+a;
+  c.addEventListener('click',()=>{areaOn[a]=!areaOn[a];c.classList.toggle('off',!areaOn[a]);render();});
+  af.appendChild(c);
+});
+document.getElementById('tCont').addEventListener('change',e=>{countCont=e.target.checked;render();});
+document.getElementById('tTent').addEventListener('change',e=>{showTent=e.target.checked;render();});
+render();
+</script>
+</body>
+</html>
