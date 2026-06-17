@@ -133,8 +133,8 @@ h1{margin:0 0 2px;font-size:20px}
       <div><label>Modalidad</label><input id="f_modalidad" placeholder="Presencial / En línea"></div>
     </div>
     <div class="grid2">
-      <div><label>Inicio</label><input id="f_inicio" type="date"></div>
-      <div><label>Fin</label><input id="f_fin" type="date"></div>
+      <div><label>Periodo general — inicio (opcional)</label><input id="f_inicio" type="date"></div>
+      <div><label>Periodo general — fin (opcional)</label><input id="f_fin" type="date"></div>
     </div>
     <label>Imparte</label><input id="f_imparte">
     <label>Lugar</label><input id="f_lugar">
@@ -142,6 +142,16 @@ h1{margin:0 0 2px;font-size:20px}
     <div class="checks">
       <label><input type="checkbox" id="f_tentativa"> Fecha tentativa</label>
       <label><input type="checkbox" id="f_continua"> Permanente (todo el año)</label>
+    </div>
+    <div id="sesEditor" style="margin-top:14px;border-top:1px solid var(--line);padding-top:12px;display:none">
+      <label style="margin:0 0 6px;color:var(--txt);font-size:13px;font-weight:600">Sesiones (días reales que se dibujan)</label>
+      <div id="sesList" style="display:flex;flex-direction:column;gap:5px;max-height:150px;overflow:auto"></div>
+      <div style="display:flex;gap:6px;align-items:flex-end;margin-top:8px">
+        <div style="flex:1"><label>Desde</label><input id="sesIni" type="date"></div>
+        <div style="flex:1"><label>Hasta (opcional)</label><input id="sesFin" type="date"></div>
+        <button class="btn green" id="addSesBtn" type="button">Agregar</button>
+      </div>
+      <div style="font-size:11px;color:var(--mut);margin-top:5px">"Hasta" vacío = sesión de un día. Cada cambio se guarda al instante.</div>
     </div>
     <div class="actions">
       <button class="btn ghost" id="delBtn" style="visibility:hidden">Borrar</button>
@@ -175,7 +185,7 @@ function di(iso){return Math.round((new Date(iso+'T00:00:00Z')-D0)/86400000);}
 function dlabel(iso){if(!iso)return '—';const[y,m,d]=iso.split('-');return (+d)+' '+MES[+m-1];}
 function esc(s){return (s||'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}
 
-let ACTS=[];
+let ACTS=[]; let SES={};   // SES[actividad_id] = [{id,inicio,fin,tipo}]
 let areaOn={}; Object.keys(AREACOLORS).forEach(a=>areaOn[a]=true);
 let countCont=false, showTent=true, isOwner=false;
 
@@ -183,15 +193,31 @@ const chart=document.getElementById('chart');
 const tip=document.getElementById('tip');
 
 async function load(){
-  const {data,error}=await sb.from('actividades').select('*').order('area',{ascending:true}).order('orden',{ascending:true});
-  if(error){chart.innerHTML='<div style="padding:20px;color:#ff8a7d">Error cargando datos: '+esc(error.message)+'</div>';return;}
-  ACTS=data||[]; render();
+  const [ra,rs]=await Promise.all([
+    sb.from('actividades').select('*').order('area',{ascending:true}).order('orden',{ascending:true}),
+    sb.from('sesiones').select('*').order('inicio',{ascending:true})
+  ]);
+  if(ra.error){chart.innerHTML='<div style="padding:20px;color:#ff8a7d">Error cargando datos: '+esc(ra.error.message)+'</div>';return;}
+  ACTS=ra.data||[];
+  SES={}; (rs.data||[]).forEach(s=>{(SES[s.actividad_id]=SES[s.actividad_id]||[]).push(s);});
+  render();
+}
+// sesiones de una actividad; si no tiene, usa su periodo inicio/fin como respaldo
+function sesOf(a){
+  const ss=SES[a.id];
+  if(ss&&ss.length) return ss;
+  if(a.inicio&&a.fin) return [{inicio:a.inicio,fin:a.fin,tipo:a.continua?'continua':'bloque'}];
+  return [];
 }
 function shown(){ return ACTS.filter(a=>!a.oculta && areaOn[a.area] && (showTent || !a.tentativa)); }
 function heatActs(){ return shown().filter(a=> countCont || !a.continua); }
-function computeHeat(){
+function computeHeat(){   // cuenta ACTIVIDADES distintas activas por día (vía sesiones)
   const c=new Array(DAYS).fill(0);
-  heatActs().forEach(a=>{if(!a.inicio||!a.fin)return;for(let i=di(a.inicio);i<=di(a.fin);i++) if(i>=0&&i<DAYS)c[i]++;});
+  heatActs().forEach(a=>{
+    const days=new Set();
+    sesOf(a).forEach(s=>{for(let i=di(s.inicio);i<=di(s.fin);i++) if(i>=0&&i<DAYS) days.add(i);});
+    days.forEach(i=>c[i]++);
+  });
   return c;
 }
 function heatColor(v,mx){
@@ -246,16 +272,18 @@ function render(){
       const tr=document.createElement('div');tr.className='track';tr.style.height='30px';
       for(let m=1;m<12;m++){const gl=document.createElement('div');gl.className='gridline';
         gl.style.left=(di(Y+'-'+String(m+1).padStart(2,'0')+'-01')*DAYW)+'px';tr.appendChild(gl);}
-      if(a.inicio&&a.fin){
-        const s=di(a.inicio),e=di(a.fin);
+      sesOf(a).forEach(se=>{
+        const s=di(se.inicio),e=di(se.fin);
+        if(e<0||s>=DAYS)return;
         const bar=document.createElement('div');
-        bar.className='bar'+(a.tentativa?' tent':'')+(a.continua?' cont':'');
-        bar.style.left=(s*DAYW)+'px';bar.style.width=Math.max(7,(e-s+1)*DAYW)+'px';bar.style.background=AREACOLORS[area];
-        bar.innerHTML='<span class="t">'+esc((a.titulo||'').replace(/^.*?>\s*/,''))+'</span>';
-        bar._a=a;bar.addEventListener('mousemove',barTip);bar.addEventListener('mouseleave',hideTip);
+        bar.className='bar'+((a.tentativa||se.tipo==='mes_aprox')?' tent':'')+(a.continua?' cont':'');
+        const w=Math.max(7,(e-s+1)*DAYW);
+        bar.style.left=(s*DAYW)+'px';bar.style.width=w+'px';bar.style.background=AREACOLORS[area];
+        if(w>64)bar.innerHTML='<span class="t">'+esc((a.titulo||'').replace(/^.*?>\s*/,''))+'</span>';
+        bar._a=a;bar._se=se;bar.addEventListener('mousemove',barTip);bar.addEventListener('mouseleave',hideTip);
         if(isOwner)bar.addEventListener('click',()=>openForm(a));
         tr.appendChild(bar);
-      }
+      });
       row.appendChild(tr);chart.appendChild(row);
     });
   });
@@ -286,12 +314,14 @@ function renderKpis(heat,mx){
 }
 function kpi(b,s){return '<div class="kpi"><b>'+b+'</b><span>'+s+'</span></div>';}
 
-function barTip(e){const a=e.currentTarget._a;
+function barTip(e){const a=e.currentTarget._a, se=e.currentTarget._se;
   let h='<h4>'+esc(a.titulo)+'</h4><div class="meta">'+a.area+'</div>';
   if(a.imparte)h+='<div class="meta">Imparte: '+esc(a.imparte)+'</div>';
   if(a.lugar)h+='<div class="meta">Lugar: '+esc(a.lugar)+'</div>';
   if(a.modalidad)h+='<div class="meta">Modalidad: '+esc(a.modalidad)+'</div>';
-  h+='<div class="meta">'+dlabel(a.inicio)+' → '+dlabel(a.fin)+'</div>';
+  if(se){const ds=(se.inicio===se.fin)?dlabel(se.inicio):dlabel(se.inicio)+' → '+dlabel(se.fin);
+    h+='<div class="meta">Sesión: '+ds+'</div>';}
+  const n=(SES[a.id]||[]).length; if(n>1)h+='<div class="meta">'+n+' sesiones en total</div>';
   if(a.tentativa)h+='<div class="meta" style="color:#f4a259">⚠ fecha tentativa</div>';
   if(a.continua)h+='<div class="meta" style="color:#8fd">actividad permanente</div>';
   if(a.fecha_raw)h+='<div class="raw">"'+esc(a.fecha_raw)+'"</div>';
@@ -299,7 +329,7 @@ function barTip(e){const a=e.currentTarget._a;
   showTip(e,h);}
 function heatTip(e){const i=+e.currentTarget.dataset.i;
   const iso=new Date(D0.getTime()+i*86400000).toISOString().slice(0,10);
-  const list=heatActs().filter(a=>a.inicio&&a.fin&&di(a.inicio)<=i&&i<=di(a.fin));
+  const list=heatActs().filter(a=>sesOf(a).some(s=>di(s.inicio)<=i&&i<=di(s.fin)));
   let h='<h4>'+dlabel(iso)+' · '+list.length+' simultáneas</h4>';
   h+='<div class="meta">'+list.slice(0,12).map(a=>'• '+esc(a.titulo)).join('<br>')+(list.length>12?'<br>…':'')+'</div>';
   showTip(e,h);}
@@ -342,8 +372,44 @@ function openForm(a){
   document.getElementById('f_tentativa').checked=a?!!a.tentativa:false;
   document.getElementById('f_continua').checked=a?!!a.continua:false;
   document.getElementById('delBtn').style.visibility=a?'visible':'hidden';
+  const ed=document.getElementById('sesEditor');
+  if(a){ed.style.display='block';renderSesList(a.id);} else {ed.style.display='none';}
+  document.getElementById('sesIni').value=''; document.getElementById('sesFin').value='';
   overlay.classList.add('on');
 }
+function renderSesList(actId){
+  const box=document.getElementById('sesList'); box.innerHTML='';
+  const ss=(SES[actId]||[]).slice().sort((x,y)=>x.inicio<y.inicio?-1:1);
+  if(!ss.length){box.innerHTML='<div style="color:var(--mut);font-size:12px">Sin sesiones aún. Agrega abajo.</div>';return;}
+  ss.forEach(s=>{
+    const row=document.createElement('div');
+    row.style.cssText='display:flex;align-items:center;gap:8px;background:var(--panel2);border:1px solid var(--line);border-radius:7px;padding:4px 8px;font-size:12px';
+    const txt=(s.inicio===s.fin)?dlabel(s.inicio):dlabel(s.inicio)+' → '+dlabel(s.fin);
+    row.innerHTML='<span style="flex:1">'+txt+' <span style="color:var(--mut)">('+s.tipo+')</span></span>';
+    const del=document.createElement('button');del.className='iconbtn rm';del.textContent='−';del.title='Borrar sesión';
+    del.addEventListener('click',()=>delSession(s.id,actId));
+    row.appendChild(del); box.appendChild(row);
+  });
+}
+async function addSession(){
+  const actId=document.getElementById('f_id').value;
+  if(!actId){alert('Primero guarda la actividad, luego agrega sus sesiones.');return;}
+  const ini=document.getElementById('sesIni').value;
+  let fin=document.getElementById('sesFin').value||ini;
+  if(!ini){alert('Pon al menos la fecha "Desde".');return;}
+  if(fin<ini)fin=ini;
+  const tipo=(ini===fin)?'unica':'bloque';
+  const {error}=await sb.from('sesiones').insert({actividad_id:actId,inicio:ini,fin:fin,tipo:tipo});
+  if(error){alert('Error: '+error.message);return;}
+  document.getElementById('sesIni').value=''; document.getElementById('sesFin').value='';
+  await load(); renderSesList(actId);
+}
+async function delSession(id,actId){
+  const {error}=await sb.from('sesiones').delete().eq('id',id);
+  if(error){alert('Error: '+error.message);return;}
+  await load(); renderSesList(actId);
+}
+document.getElementById('addSesBtn').addEventListener('click',addSession);
 document.getElementById('newBtn').addEventListener('click',()=>openForm(null));
 document.getElementById('cancelBtn').addEventListener('click',()=>overlay.classList.remove('on'));
 overlay.addEventListener('click',e=>{if(e.target===overlay)overlay.classList.remove('on');});
@@ -364,11 +430,23 @@ document.getElementById('saveBtn').addEventListener('click',async()=>{
   };
   if(!rec.titulo){msg.className='msg err';msg.textContent='El título es obligatorio.';return;}
   const id=document.getElementById('f_id').value;
-  let error;
+  let error, newId=null;
   if(id){({error}=await sb.from('actividades').update(rec).eq('id',id));}
-  else {rec.area_code=ACODE[rec.area]||''; ({error}=await sb.from('actividades').insert(rec));}
+  else {rec.area_code=ACODE[rec.area]||'';
+        const r=await sb.from('actividades').insert(rec).select('id').single();
+        error=r.error; newId=r.data&&r.data.id;}
   if(error){msg.className='msg err';msg.textContent='Error: '+error.message;return;}
-  overlay.classList.remove('on'); await load();
+  await load();
+  if(newId){ // recién creada: queda abierta en modo edición para añadir sesiones
+    document.getElementById('f_id').value=newId;
+    document.getElementById('mTitle').textContent='Editar actividad';
+    document.getElementById('delBtn').style.visibility='visible';
+    document.getElementById('sesEditor').style.display='block';
+    renderSesList(newId);
+    msg.className='msg ok'; msg.textContent='Guardada ✓ Ahora agrega sus sesiones abajo.';
+  } else {
+    msg.className='msg ok'; msg.textContent='Guardado ✓';
+  }
 });
 document.getElementById('delBtn').addEventListener('click',async()=>{
   if(!confirm('¿Borrar esta actividad de forma permanente?'))return;
